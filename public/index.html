@@ -1,0 +1,455 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SpyBurger — Análise de Concorrência</title>
+<style>
+* { margin:0; padding:0; box-sizing:border-box; }
+body { font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif; background:#0a0a0a; color:#f0f0f4; min-height:100vh; }
+
+nav { display:flex; align-items:center; justify-content:space-between; padding:16px 28px; border-bottom:1px solid #1e1e1e; background:#0a0a0a; position:sticky; top:0; z-index:10; }
+.logo { display:flex; align-items:center; gap:10px; }
+.logo-mark { width:32px; height:32px; background:#ff6b35; border-radius:8px; display:flex; align-items:center; justify-content:center; font-weight:800; font-size:14px; color:#fff; }
+.logo-name { font-size:17px; font-weight:700; }
+.logo-name span { color:#ff6b35; }
+.nav-badge { font-size:11px; color:#ff6b35; background:rgba(255,107,53,0.1); border:1px solid rgba(255,107,53,0.25); padding:4px 12px; border-radius:20px; }
+
+.hero { padding:32px 32px 24px; border-bottom:1px solid #1e1e1e; }
+.hero h1 { font-size:22px; font-weight:700; margin-bottom:6px; }
+.hero p { font-size:13px; color:#666; line-height:1.6; max-width:600px; }
+
+.search-area { padding:24px 32px; border-bottom:1px solid #1e1e1e; }
+.search-row { display:flex; gap:12px; flex-wrap:wrap; margin-bottom:16px; }
+.input-wrap { display:flex; flex-direction:column; gap:6px; flex:1; min-width:200px; }
+.input-wrap label { font-size:11px; font-weight:600; letter-spacing:0.8px; text-transform:uppercase; color:#555; }
+.inp { padding:11px 14px; border-radius:10px; border:1px solid #2a2a2a; background:#141414; color:#f0f0f4; font-family:inherit; font-size:14px; transition:border 0.15s; }
+.inp:focus { outline:none; border-color:rgba(255,107,53,0.4); }
+.inp::placeholder { color:#444; }
+
+.filters-row { display:flex; gap:8px; flex-wrap:wrap; margin-bottom:16px; }
+.filter-lbl { font-size:11px; font-weight:600; letter-spacing:0.8px; text-transform:uppercase; color:#555; width:100%; margin-bottom:2px; }
+.fchip { display:flex; align-items:center; gap:6px; padding:7px 12px; border-radius:8px; cursor:pointer; border:1px solid #2a2a2a; font-size:12px; color:#666; background:#141414; font-family:inherit; transition:all 0.15s; }
+.fchip:hover { color:#f0f0f4; border-color:#3a3a3a; }
+.fchip.on { background:rgba(255,107,53,0.08); border-color:rgba(255,107,53,0.3); color:#ff6b35; }
+.fchip .ico { font-size:14px; }
+
+.analyze-btn { display:flex; align-items:center; justify-content:center; gap:8px; background:#ff6b35; color:#fff; border:none; padding:13px 28px; border-radius:11px; font-weight:700; font-size:14px; cursor:pointer; font-family:inherit; transition:all 0.15s; width:100%; }
+.analyze-btn:hover { background:#ff7a47; }
+.analyze-btn:disabled { opacity:0.5; cursor:not-allowed; }
+
+.results { padding:28px 32px; }
+
+.empty { display:flex; flex-direction:column; align-items:center; justify-content:center; min-height:300px; gap:14px; text-align:center; }
+.empty-ico { font-size:48px; }
+.empty h2 { font-size:18px; font-weight:700; }
+.empty p { color:#555; font-size:13px; max-width:320px; line-height:1.65; }
+
+.loading { display:flex; flex-direction:column; align-items:center; justify-content:center; min-height:300px; gap:18px; }
+.ring { width:44px; height:44px; border:3px solid #1e1e1e; border-top-color:#ff6b35; border-radius:50%; animation:spin 0.9s linear infinite; }
+@keyframes spin { to{transform:rotate(360deg)} }
+.loading p { color:#555; font-size:13px; }
+
+.grid { display:flex; flex-direction:column; gap:20px; animation:up 0.4s ease; }
+@keyframes up { from{opacity:0;transform:translateY(12px)} to{opacity:1;transform:translateY(0)} }
+
+/* HEADER CARD */
+.competitor-header { background:#141414; border:1px solid #1e1e1e; border-radius:16px; padding:22px 26px; border-left:4px solid #ff6b35; }
+.ch-top { display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:12px; margin-bottom:14px; }
+.ch-name { font-size:20px; font-weight:700; }
+.ch-city { font-size:12px; color:#666; margin-top:2px; }
+.ch-score { display:flex; flex-direction:column; align-items:center; gap:4px; }
+.ch-score-num { font-size:28px; font-weight:700; }
+.ch-score-lbl { font-size:10px; color:#666; text-transform:uppercase; letter-spacing:0.8px; }
+.ch-resumo { font-size:13.5px; line-height:1.7; color:#aaa; }
+
+/* SCORE BADGES */
+.scores-row { display:grid; grid-template-columns:repeat(auto-fit,minmax(140px,1fr)); gap:12px; }
+.score-card { background:#141414; border:1px solid #1e1e1e; border-radius:12px; padding:16px; text-align:center; }
+.score-card-ico { font-size:22px; margin-bottom:6px; }
+.score-card-num { font-size:22px; font-weight:700; margin-bottom:2px; }
+.score-card-lbl { font-size:11px; color:#555; }
+.score-card-bar { width:100%; height:4px; background:#1e1e1e; border-radius:4px; overflow:hidden; margin-top:8px; }
+.score-card-fill { height:100%; border-radius:4px; }
+
+/* SECTION CARD */
+.section-card { background:#141414; border:1px solid #1e1e1e; border-radius:14px; padding:20px 22px; }
+.section-title { display:flex; align-items:center; gap:8px; font-size:13px; font-weight:700; margin-bottom:14px; padding-bottom:12px; border-bottom:1px solid #1e1e1e; }
+.section-title span { font-size:16px; }
+
+.item-list { display:flex; flex-direction:column; gap:10px; }
+.item { display:flex; align-items:flex-start; gap:10px; }
+.item-dot { width:6px; height:6px; border-radius:50%; margin-top:6px; flex-shrink:0; }
+.item-text { font-size:13px; line-height:1.65; color:#bbb; }
+.item-text strong { color:#f0f0f4; }
+
+/* FRAQUEZAS */
+.fraqueza-item { background:#1a1010; border:1px solid rgba(255,71,87,0.15); border-radius:10px; padding:12px 14px; margin-bottom:8px; }
+.fraqueza-title { font-size:12px; font-weight:600; color:#ff4757; margin-bottom:4px; }
+.fraqueza-text { font-size:13px; color:#bbb; line-height:1.6; }
+.oportunidade-item { background:#0f1a10; border:1px solid rgba(200,242,48,0.15); border-radius:10px; padding:12px 14px; margin-bottom:8px; }
+.oportunidade-title { font-size:12px; font-weight:600; color:#c8f230; margin-bottom:4px; }
+.oportunidade-text { font-size:13px; color:#bbb; line-height:1.6; }
+
+/* PRECO */
+.preco-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(180px,1fr)); gap:10px; }
+.preco-item { background:#1a1a1a; border-radius:10px; padding:12px 14px; }
+.preco-nome { font-size:13px; font-weight:500; color:#f0f0f4; margin-bottom:4px; }
+.preco-valor { font-size:16px; font-weight:700; color:#ff6b35; }
+.preco-obs { font-size:11px; color:#555; margin-top:2px; }
+
+/* ACAO FINAL */
+.acao-final { background:linear-gradient(135deg,rgba(255,107,53,0.06),rgba(255,71,87,0.04)); border:1px solid rgba(255,107,53,0.25); border-radius:14px; padding:20px 22px; }
+.acao-lbl { font-size:12px; font-weight:700; color:#ff6b35; text-transform:uppercase; letter-spacing:0.8px; margin-bottom:10px; }
+.acao-text { font-size:14px; line-height:1.75; color:#ddd; }
+
+/* EXPORT */
+.export-row { display:flex; gap:8px; margin-top:4px; }
+.ebtn { padding:7px 16px; border-radius:8px; font-size:12px; cursor:pointer; border:1px solid #2a2a2a; background:#141414; color:#666; font-family:inherit; transition:all 0.15s; }
+.ebtn:hover { color:#f0f0f4; border-color:#3a3a3a; }
+
+.errbox { background:rgba(255,71,87,0.07); border:1px solid rgba(255,71,87,0.2); border-radius:10px; padding:16px 20px; color:#ff6b6b; font-size:13px; line-height:1.6; }
+
+::-webkit-scrollbar{width:4px} ::-webkit-scrollbar-thumb{background:#2a2a2a;border-radius:4px}
+@media(max-width:600px){ .search-row{flex-direction:column} .hero,.search-area,.results{padding-left:18px;padding-right:18px} }
+</style>
+</head>
+<body>
+
+<nav>
+  <div class="logo">
+    <div class="logo-mark">SB</div>
+    <span class="logo-name">Spy<span>Burger</span></span>
+  </div>
+  <div class="nav-badge">🔍 Análise de Concorrência</div>
+</nav>
+
+<div class="hero">
+  <h1>O que seus concorrentes estão fazendo?</h1>
+  <p>Digite o nome de qualquer hamburgueria e descubra tudo — avaliações, redes sociais, cardápio, preços, pontos fracos e oportunidades para você se destacar.</p>
+</div>
+
+<div class="search-area">
+  <div class="search-row">
+    <div class="input-wrap" style="flex:2">
+      <label>Nome do concorrente</label>
+      <input class="inp" id="nomeInput" placeholder="Ex: Burger King, Smash da Vila, X-Burguer do João..." />
+    </div>
+    <div class="input-wrap" style="flex:1">
+      <label>Cidade</label>
+      <input class="inp" id="cidadeInput" placeholder="Ex: Camboriú, São Paulo..." />
+    </div>
+  </div>
+
+  <div class="filters-row">
+    <div class="filter-lbl">O que analisar:</div>
+    <button class="fchip on" data-f="avaliacoes" onclick="toggleF(this)"><span class="ico">⭐</span> Avaliações Google & iFood</button>
+    <button class="fchip on" data-f="redes" onclick="toggleF(this)"><span class="ico">📱</span> Redes Sociais</button>
+    <button class="fchip on" data-f="cardapio" onclick="toggleF(this)"><span class="ico">🍔</span> Cardápio & Preços</button>
+    <button class="fchip on" data-f="promocoes" onclick="toggleF(this)"><span class="ico">🎯</span> Promoções & Estratégias</button>
+    <button class="fchip on" data-f="fraquezas" onclick="toggleF(this)"><span class="ico">💡</span> Fraquezas & Oportunidades</button>
+  </div>
+
+  <button class="analyze-btn" id="analyzeBtn" onclick="runAnalysis()">🔍 Espionar Concorrente</button>
+</div>
+
+<div class="results" id="results">
+  <div class="empty">
+    <div class="empty-ico">🕵️</div>
+    <h2>Pronto para espionar</h2>
+    <p>Digite o nome de um concorrente e a cidade para começar a análise.</p>
+  </div>
+</div>
+
+<script>
+const MSGS = ['Buscando informações do concorrente...','Analisando avaliações...','Vasculhando redes sociais...','Identificando pontos fracos...','Montando o relatório...'];
+const FLABELS = { avaliacoes:'Avaliações', redes:'Redes Sociais', cardapio:'Cardápio & Preços', promocoes:'Promoções', fraquezas:'Fraquezas & Oportunidades' };
+let lastData = null;
+
+function toggleF(el) { el.classList.toggle('on'); }
+function getFilters() { return [...document.querySelectorAll('.fchip.on')].map(f => f.dataset.f); }
+
+async function runAnalysis() {
+  const nome = document.getElementById('nomeInput').value.trim();
+  const cidade = document.getElementById('cidadeInput').value.trim();
+  if (!nome) { alert('Digite o nome do concorrente!'); return; }
+
+  const filters = getFilters();
+  if (!filters.length) { alert('Selecione pelo menos um item para analisar!'); return; }
+
+  const btn = document.getElementById('analyzeBtn');
+  btn.disabled = true;
+  lastData = null;
+
+  let mi = 0;
+  const el = document.getElementById('results');
+  el.innerHTML = `<div class="loading"><div class="ring"></div><p id="lmsg">${MSGS[0]}</p></div>`;
+  const iv = setInterval(() => { mi=(mi+1)%MSGS.length; const lm=document.getElementById('lmsg'); if(lm) lm.textContent=MSGS[mi]; btn.innerHTML=`⟳ ${MSGS[mi]}`; }, 2500);
+
+  const cidadeTxt = cidade ? ` em ${cidade}` : ' no Brasil';
+  const filterNames = filters.map(f => FLABELS[f]).join(', ');
+
+  const prompt = `Você é um especialista em inteligência competitiva para o setor de hamburguerias e fast food no Brasil.
+
+Faça uma pesquisa completa e REAL sobre a hamburgueria/restaurante: "${nome}"${cidadeTxt}.
+
+Analise especificamente: ${filterNames}.
+
+Responda SOMENTE com JSON válido, sem texto antes ou depois:
+
+{
+  "nome": "${nome}",
+  "cidade": "${cidade || 'Brasil'}",
+  "score_geral": 72,
+  "resumo_geral": "Parágrafo resumindo quem é esse concorrente, posicionamento e presença no mercado.",
+  "scores": {
+    "avaliacoes": 75,
+    "redes_sociais": 60,
+    "cardapio": 80,
+    "atendimento": 65,
+    "preco": 70
+  },
+  "avaliacoes": {
+    "nota_google": "4.2",
+    "nota_ifood": "4.5",
+    "total_avaliacoes": "320+",
+    "elogios": ["ponto forte 1", "ponto forte 2", "ponto forte 3"],
+    "reclamacoes": ["reclamação 1", "reclamação 2", "reclamação 3"]
+  },
+  "redes_sociais": {
+    "instagram": "@handle ou 'não encontrado'",
+    "seguidores": "12k ou 'não encontrado'",
+    "frequencia_posts": "diário/semanal/irregular",
+    "tipo_conteudo": ["tipo 1", "tipo 2"],
+    "engajamento": "alto/médio/baixo",
+    "estrategia": "Como eles usam as redes"
+  },
+  "cardapio": {
+    "especialidades": ["item 1", "item 2", "item 3"],
+    "faixa_preco": "R$25–45",
+    "diferenciais": ["diferencial 1", "diferencial 2"],
+    "itens_destaque": [
+      {"nome": "Nome do item", "preco": "R$35", "obs": "mais pedido"},
+      {"nome": "Nome do item", "preco": "R$28", "obs": "promoção"}
+    ]
+  },
+  "promocoes": {
+    "estrategias": ["estratégia 1", "estratégia 2"],
+    "canais": ["canal 1", "canal 2"],
+    "frequencia": "Como e quando promovem"
+  },
+  "fraquezas": [
+    {"titulo": "Fraqueza 1", "descricao": "Detalhe da fraqueza baseado em avaliações reais"},
+    {"titulo": "Fraqueza 2", "descricao": "Detalhe da fraqueza"},
+    {"titulo": "Fraqueza 3", "descricao": "Detalhe da fraqueza"}
+  ],
+  "oportunidades": [
+    {"titulo": "Oportunidade 1", "descricao": "Como o Hamburguer das Meninas pode se destacar aqui"},
+    {"titulo": "Oportunidade 2", "descricao": "Como se destacar"},
+    {"titulo": "Oportunidade 3", "descricao": "Como se destacar"}
+  ],
+  "acao_recomendada": "A principal ação que o Hamburguer das Meninas deve tomar baseada nessa análise para superar esse concorrente."
+}
+
+Use dados REAIS encontrados na busca. Scores de 0-100. JSON puro.`;
+
+  try {
+    const res = await fetch('/api/analyze', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        model: 'claude-opus-4-5',
+        max_tokens: 4000,
+        tools: [{ type: 'web_search_20250305', name: 'web_search' }],
+        messages: [{ role: 'user', content: prompt }]
+      })
+    });
+    if (!res.ok) { const e = await res.json().catch(()=>{}); throw new Error(e?.error?.message || 'HTTP '+res.status); }
+    const data = await res.json();
+    const txt = (data.content||[]).filter(b=>b.type==='text').map(b=>b.text).join('\n');
+    let js = txt.replace(/```json|```/g,'').trim();
+    const s=js.indexOf('{'), e2=js.lastIndexOf('}');
+    if(s!==-1&&e2!==-1) js=js.slice(s,e2+1);
+    const parsed = JSON.parse(js);
+    parsed._filters = filters;
+    parsed._ts = new Date().toISOString();
+    lastData = parsed;
+    clearInterval(iv);
+    btn.disabled = false; btn.innerHTML = '🔍 Espionar Novamente';
+    renderResults(parsed, filters);
+  } catch(err) {
+    clearInterval(iv);
+    btn.disabled = false; btn.innerHTML = '🔍 Tentar Novamente';
+    el.innerHTML = `<div class="errbox">⚠️ <strong>Erro:</strong> ${err.message}</div>`;
+  }
+}
+
+function scoreColor(s) { return s>=75?'#c8f230':s>=50?'#ff6b35':'#ff4757'; }
+
+function renderResults(d, filters) {
+  const el = document.getElementById('results');
+  const sc = d.score_geral || 70;
+  const scColor = scoreColor(sc);
+  const now = new Date(d._ts).toLocaleString('pt-BR');
+
+  let h = `<div class="grid">
+    <div class="export-row">
+      <button class="ebtn" onclick="exportTxt()">⬇ Exportar .txt</button>
+      <button class="ebtn" onclick="copyAll()">📋 Copiar relatório</button>
+    </div>
+
+    <div class="competitor-header">
+      <div class="ch-top">
+        <div>
+          <div class="ch-name">🍔 ${d.nome}</div>
+          <div class="ch-city">📍 ${d.cidade} · Analisado em ${now}</div>
+        </div>
+        <div class="ch-score">
+          <div class="ch-score-num" style="color:${scColor}">${sc}</div>
+          <div class="ch-score-lbl">Score geral</div>
+        </div>
+      </div>
+      <div class="ch-resumo">${d.resumo_geral || ''}</div>
+    </div>`;
+
+  if (d.scores) {
+    const scoreItems = [
+      {lbl:'Avaliações', ico:'⭐', key:'avaliacoes'},
+      {lbl:'Redes Sociais', ico:'📱', key:'redes_sociais'},
+      {lbl:'Cardápio', ico:'🍔', key:'cardapio'},
+      {lbl:'Atendimento', ico:'🤝', key:'atendimento'},
+      {lbl:'Preço', ico:'💰', key:'preco'},
+    ];
+    h += `<div class="scores-row">`;
+    scoreItems.forEach(item => {
+      const v = d.scores[item.key] || 0;
+      const c = scoreColor(v);
+      h += `<div class="score-card">
+        <div class="score-card-ico">${item.ico}</div>
+        <div class="score-card-num" style="color:${c}">${v}</div>
+        <div class="score-card-lbl">${item.lbl}</div>
+        <div class="score-card-bar"><div class="score-card-fill" style="width:${v}%;background:${c}"></div></div>
+      </div>`;
+    });
+    h += `</div>`;
+  }
+
+  if (filters.includes('avaliacoes') && d.avaliacoes) {
+    const av = d.avaliacoes;
+    h += `<div class="section-card">
+      <div class="section-title"><span>⭐</span> Avaliações & Reputação</div>
+      <div style="display:flex;gap:16px;flex-wrap:wrap;margin-bottom:16px;">
+        <div style="background:#1a1a1a;border-radius:10px;padding:12px 20px;text-align:center;">
+          <div style="font-size:22px;font-weight:700;color:#c8f230">${av.nota_google||'—'}</div>
+          <div style="font-size:11px;color:#555;margin-top:2px;">Google</div>
+        </div>
+        <div style="background:#1a1a1a;border-radius:10px;padding:12px 20px;text-align:center;">
+          <div style="font-size:22px;font-weight:700;color:#ff6b35">${av.nota_ifood||'—'}</div>
+          <div style="font-size:11px;color:#555;margin-top:2px;">iFood</div>
+        </div>
+        <div style="background:#1a1a1a;border-radius:10px;padding:12px 20px;text-align:center;">
+          <div style="font-size:22px;font-weight:700;color:#3b82f6">${av.total_avaliacoes||'—'}</div>
+          <div style="font-size:11px;color:#555;margin-top:2px;">Avaliações</div>
+        </div>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;">
+        <div>
+          <div style="font-size:11px;font-weight:600;color:#c8f230;text-transform:uppercase;letter-spacing:0.8px;margin-bottom:8px;">✅ Elogiam</div>
+          <div class="item-list">${(av.elogios||[]).map(e=>`<div class="item"><div class="item-dot" style="background:#c8f230"></div><div class="item-text">${e}</div></div>`).join('')}</div>
+        </div>
+        <div>
+          <div style="font-size:11px;font-weight:600;color:#ff4757;text-transform:uppercase;letter-spacing:0.8px;margin-bottom:8px;">❌ Reclamam</div>
+          <div class="item-list">${(av.reclamacoes||[]).map(r=>`<div class="item"><div class="item-dot" style="background:#ff4757"></div><div class="item-text">${r}</div></div>`).join('')}</div>
+        </div>
+      </div>
+    </div>`;
+  }
+
+  if (filters.includes('redes') && d.redes_sociais) {
+    const rs = d.redes_sociais;
+    h += `<div class="section-card">
+      <div class="section-title"><span>📱</span> Presença nas Redes Sociais</div>
+      <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:14px;">
+        <div style="background:#1a1a1a;border-radius:10px;padding:10px 14px;font-size:13px;"><span style="color:#555">Instagram:</span> <strong>${rs.instagram||'—'}</strong></div>
+        <div style="background:#1a1a1a;border-radius:10px;padding:10px 14px;font-size:13px;"><span style="color:#555">Seguidores:</span> <strong style="color:#ff6b35">${rs.seguidores||'—'}</strong></div>
+        <div style="background:#1a1a1a;border-radius:10px;padding:10px 14px;font-size:13px;"><span style="color:#555">Posts:</span> <strong>${rs.frequencia_posts||'—'}</strong></div>
+        <div style="background:#1a1a1a;border-radius:10px;padding:10px 14px;font-size:13px;"><span style="color:#555">Engajamento:</span> <strong>${rs.engajamento||'—'}</strong></div>
+      </div>
+      <div style="font-size:13px;line-height:1.65;color:#aaa;margin-bottom:10px;">${rs.estrategia||''}</div>
+      <div style="display:flex;gap:6px;flex-wrap:wrap;">${(rs.tipo_conteudo||[]).map(t=>`<span style="background:#1a1a1a;border:1px solid #2a2a2a;padding:4px 10px;border-radius:6px;font-size:11px;color:#888">${t}</span>`).join('')}</div>
+    </div>`;
+  }
+
+  if (filters.includes('cardapio') && d.cardapio) {
+    const ca = d.cardapio;
+    h += `<div class="section-card">
+      <div class="section-title"><span>🍔</span> Cardápio & Preços</div>
+      <div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:16px;">
+        <div style="background:#1a1a1a;border-radius:10px;padding:10px 16px;font-size:13px;"><span style="color:#555">Faixa de preço:</span> <strong style="color:#ff6b35">${ca.faixa_preco||'—'}</strong></div>
+      </div>
+      ${ca.itens_destaque?.length ? `<div style="font-size:11px;font-weight:600;color:#555;text-transform:uppercase;letter-spacing:0.8px;margin-bottom:10px;">Itens em destaque</div><div class="preco-grid">${ca.itens_destaque.map(i=>`<div class="preco-item"><div class="preco-nome">${i.nome}</div><div class="preco-valor">${i.preco}</div><div class="preco-obs">${i.obs||''}</div></div>`).join('')}</div>` : ''}
+      ${ca.diferenciais?.length ? `<div style="font-size:11px;font-weight:600;color:#555;text-transform:uppercase;letter-spacing:0.8px;margin:14px 0 8px;">Diferenciais</div><div class="item-list">${ca.diferenciais.map(d=>`<div class="item"><div class="item-dot" style="background:#ff6b35"></div><div class="item-text">${d}</div></div>`).join('')}</div>` : ''}
+    </div>`;
+  }
+
+  if (filters.includes('promocoes') && d.promocoes) {
+    const pr = d.promocoes;
+    h += `<div class="section-card">
+      <div class="section-title"><span>🎯</span> Promoções & Estratégias</div>
+      <div style="font-size:13px;line-height:1.65;color:#aaa;margin-bottom:12px;">${pr.frequencia||''}</div>
+      <div class="item-list">${(pr.estrategias||[]).map(s=>`<div class="item"><div class="item-dot" style="background:#3b82f6"></div><div class="item-text">${s}</div></div>`).join('')}</div>
+    </div>`;
+  }
+
+  if (filters.includes('fraquezas') && (d.fraquezas||d.oportunidades)) {
+    h += `<div class="section-card">
+      <div class="section-title"><span>💡</span> Fraquezas & Oportunidades para Você</div>
+      ${d.fraquezas?.length ? `<div style="font-size:11px;font-weight:600;color:#ff4757;text-transform:uppercase;letter-spacing:0.8px;margin-bottom:10px;">❌ Pontos Fracos Deles</div>${d.fraquezas.map(f=>`<div class="fraqueza-item"><div class="fraqueza-title">${f.titulo}</div><div class="fraqueza-text">${f.descricao}</div></div>`).join('')}` : ''}
+      ${d.oportunidades?.length ? `<div style="font-size:11px;font-weight:600;color:#c8f230;text-transform:uppercase;letter-spacing:0.8px;margin:16px 0 10px;">✅ Suas Oportunidades</div>${d.oportunidades.map(o=>`<div class="oportunidade-item"><div class="oportunidade-title">${o.titulo}</div><div class="oportunidade-text">${o.descricao}</div></div>`).join('')}` : ''}
+    </div>`;
+  }
+
+  if (d.acao_recomendada) {
+    h += `<div class="acao-final">
+      <div class="acao-lbl">🚀 Ação recomendada para o Hamburguer das Meninas</div>
+      <div class="acao-text">${d.acao_recomendada}</div>
+    </div>`;
+  }
+
+  h += '</div>';
+  el.innerHTML = h;
+}
+
+function copyAll() {
+  if (!lastData) return;
+  const d = lastData;
+  let txt = `SPYBURGER — ANÁLISE DE CONCORRÊNCIA\n${d.nome} · ${d.cidade}\nGerado em: ${new Date(d._ts).toLocaleString('pt-BR')}\n${'='.repeat(50)}\n\n`;
+  txt += `RESUMO GERAL\n${d.resumo_geral}\nScore Geral: ${d.score_geral}/100\n\n`;
+  if (d.avaliacoes) txt += `AVALIAÇÕES\nGoogle: ${d.avaliacoes.nota_google} | iFood: ${d.avaliacoes.nota_ifood}\nElogios: ${(d.avaliacoes.elogios||[]).join(', ')}\nReclamações: ${(d.avaliacoes.reclamacoes||[]).join(', ')}\n\n`;
+  if (d.cardapio) txt += `CARDÁPIO\nFaixa de preço: ${d.cardapio.faixa_preco}\nEspecialidades: ${(d.cardapio.especialidades||[]).join(', ')}\n\n`;
+  if (d.fraquezas) txt += `FRAQUEZAS\n${d.fraquezas.map(f=>`- ${f.titulo}: ${f.descricao}`).join('\n')}\n\n`;
+  if (d.oportunidades) txt += `OPORTUNIDADES\n${d.oportunidades.map(o=>`- ${o.titulo}: ${o.descricao}`).join('\n')}\n\n`;
+  txt += `AÇÃO RECOMENDADA\n${d.acao_recomendada}`;
+  navigator.clipboard.writeText(txt).then(() => alert('Relatório copiado!'));
+}
+
+function exportTxt() {
+  if (!lastData) return;
+  const d = lastData;
+  let txt = `SPYBURGER — ANÁLISE DE CONCORRÊNCIA\n${d.nome} · ${d.cidade}\nGerado em: ${new Date(d._ts).toLocaleString('pt-BR')}\n${'='.repeat(50)}\n\n`;
+  txt += `RESUMO GERAL\n${d.resumo_geral}\nScore Geral: ${d.score_geral}/100\n\n`;
+  if (d.avaliacoes) txt += `AVALIAÇÕES\nGoogle: ${d.avaliacoes.nota_google} | iFood: ${d.avaliacoes.nota_ifood} | Total: ${d.avaliacoes.total_avaliacoes}\nElogios: ${(d.avaliacoes.elogios||[]).join(', ')}\nReclamações: ${(d.avaliacoes.reclamacoes||[]).join(', ')}\n\n`;
+  if (d.redes_sociais) txt += `REDES SOCIAIS\nInstagram: ${d.redes_sociais.instagram} | Seguidores: ${d.redes_sociais.seguidores}\nEngajamento: ${d.redes_sociais.engajamento}\n${d.redes_sociais.estrategia}\n\n`;
+  if (d.cardapio) txt += `CARDÁPIO\nFaixa de preço: ${d.cardapio.faixa_preco}\nEspecialidades: ${(d.cardapio.especialidades||[]).join(', ')}\nDiferenciais: ${(d.cardapio.diferenciais||[]).join(', ')}\n\n`;
+  if (d.promocoes) txt += `PROMOÇÕES\n${d.promocoes.frequencia}\n${(d.promocoes.estrategias||[]).join('\n')}\n\n`;
+  if (d.fraquezas) txt += `FRAQUEZAS\n${d.fraquezas.map(f=>`- ${f.titulo}: ${f.descricao}`).join('\n')}\n\n`;
+  if (d.oportunidades) txt += `OPORTUNIDADES\n${d.oportunidades.map(o=>`- ${o.titulo}: ${o.descricao}`).join('\n')}\n\n`;
+  txt += `AÇÃO RECOMENDADA\n${d.acao_recomendada}`;
+  const a = document.createElement('a');
+  a.href = 'data:text/plain;charset=utf-8,' + encodeURIComponent(txt);
+  a.download = `spyburger_${d.nome.replace(/\s+/g,'_')}_${new Date().toISOString().slice(0,10)}.txt`;
+  a.click();
+}
+</script>
+</body>
+</html>
